@@ -22,12 +22,10 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
         
-        // Safety check for Recharts availability
         const { 
             LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
         } = window.Recharts || {};
 
-        // Simple Emoji-based Icon component
         const EmojiIcon = ({ name, size = "text-xl" }) => {
             const icons = {
                 Calendar: "📅",
@@ -36,41 +34,32 @@
                 TrendingDown: "📉",
                 Trash2: "🗑️",
                 Scale: "⚖️",
-                Info: "ℹ️",
-                Trophy: "🏆",
                 Target: "🎯",
-                Flame: "🔥",
-                Beef: "🥩"
+                Trophy: "🏆",
+                BarChart: "📊"
             };
             return <span className={size} role="img" aria-label={name}>{icons[name] || "•"}</span>;
         };
 
         const App = () => {
-            // Weight Logs State
             const [weights, setWeights] = useState(() => {
                 try {
                     const saved = localStorage.getItem('weight_logs');
                     return saved ? JSON.parse(saved) : [];
-                } catch (e) {
-                    return [];
-                }
+                } catch (e) { return []; }
             });
 
-            // Goals State
             const [goals, setGoals] = useState(() => {
                 try {
                     const saved = localStorage.getItem('weight_goals');
                     return saved ? JSON.parse(saved) : { calories: '', protein: '' };
-                } catch (e) {
-                    return { calories: '', protein: '' };
-                }
+                } catch (e) { return { calories: '', protein: '' }; }
             });
             
             const [inputValue, setInputValue] = useState('');
             const [inputDate, setInputDate] = useState(new Date().toISOString().split('T')[0]);
             const [unit, setUnit] = useState('lbs');
 
-            // Persist Data
             useEffect(() => {
                 localStorage.setItem('weight_logs', JSON.stringify(weights));
             }, [weights]);
@@ -83,17 +72,28 @@
                 return [...weights].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             }, [weights]);
 
+            // Calculate Sunday-Saturday stats
             const stats = useMemo(() => {
-                if (!sortedWeights.length) return { avgThisWeek: null, avgLastWeek: null, diff: null, countThisWeek: 0, totalProgress: null };
+                if (!sortedWeights.length) return { avgThisWeek: null, avgLastWeek: null, diff: null, totalProgress: null };
                 
-                const now = new Date();
-                const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const currentDay = today.getDay(); 
                 
-                const thisWeekLogs = sortedWeights.filter(w => new Date(w.date) >= oneWeekAgo);
+                const startOfThisWeek = new Date(today);
+                startOfThisWeek.setDate(today.getDate() - currentDay);
+                
+                const startOfLastWeek = new Date(startOfThisWeek);
+                startOfLastWeek.setDate(startOfThisWeek.getDate() - 7);
+                
+                const thisWeekLogs = sortedWeights.filter(w => {
+                    const d = new Date(w.date + 'T00:00:00');
+                    return d >= startOfThisWeek;
+                });
+
                 const lastWeekLogs = sortedWeights.filter(w => {
-                    const d = new Date(w.date);
-                    return d >= twoWeeksAgo && d < oneWeekAgo;
+                    const d = new Date(w.date + 'T00:00:00');
+                    return d >= startOfLastWeek && d < startOfThisWeek;
                 });
                 
                 const avgThisWeek = thisWeekLogs.length ? thisWeekLogs.reduce((acc, c) => acc + parseFloat(c.value), 0) / thisWeekLogs.length : null;
@@ -103,13 +103,35 @@
                 const latestWeight = sortedWeights[sortedWeights.length - 1].value;
                 const totalProgress = latestWeight - firstWeight;
 
-                return { 
-                    avgThisWeek, 
-                    avgLastWeek, 
-                    diff: (avgThisWeek !== null && avgLastWeek !== null) ? avgThisWeek - avgLastWeek : null, 
-                    countThisWeek: thisWeekLogs.length,
-                    totalProgress
-                };
+                return { avgThisWeek, avgLastWeek, diff: (avgThisWeek !== null && avgLastWeek !== null) ? avgThisWeek - avgLastWeek : null, totalProgress };
+            }, [sortedWeights]);
+
+            // Calculate Monthly Averages Dec 2025 - Dec 2026
+            const monthlyAverages = useMemo(() => {
+                const months = [];
+                // Start: Dec 2025
+                const current = new Date(2025, 11, 1);
+                // End: Dec 2026
+                const end = new Date(2026, 11, 1);
+
+                while (current <= end) {
+                    const monthYear = current.toLocaleString('default', { month: 'short', year: 'numeric' });
+                    const m = current.getMonth();
+                    const y = current.getFullYear();
+
+                    const logsInMonth = sortedWeights.filter(w => {
+                        const d = new Date(w.date + 'T00:00:00');
+                        return d.getMonth() === m && d.getFullYear() === y;
+                    });
+
+                    const avg = logsInMonth.length 
+                        ? (logsInMonth.reduce((sum, w) => sum + parseFloat(w.value), 0) / logsInMonth.length).toFixed(1)
+                        : null;
+
+                    months.push({ label: monthYear, avg });
+                    current.setMonth(current.getMonth() + 1);
+                }
+                return months;
             }, [sortedWeights]);
 
             const handleAddWeight = (e) => {
@@ -138,16 +160,12 @@
                 return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
             };
 
-            if (!window.Recharts) {
-                return <div className="p-8 text-center font-sans">Loading charting library...</div>;
-            }
-
             return (
                 <div className="min-h-screen p-4 md:p-8 text-slate-900 max-w-5xl mx-auto space-y-6 font-sans">
                     <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <div>
                             <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Iman's Weight Tracker</h1>
-                            <p className="text-slate-500 text-sm font-medium">Goal: Lose 1000 lbs (One step at a time!)</p>
+                            <p className="text-slate-500 text-sm font-medium italic">Sunday to Saturday Tracking Cycle</p>
                         </div>
                         <button 
                             onClick={() => setUnit(unit === 'lbs' ? 'kg' : 'lbs')} 
@@ -162,17 +180,25 @@
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <div className="flex items-center gap-3 mb-2">
                                 <EmojiIcon name="Calendar" />
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Current Weekly Average</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Current Weekly Avg</span>
                             </div>
-                            <div className="text-3xl font-bold italic">{stats.avgThisWeek?.toFixed(1) || '--'} <span className="text-sm text-slate-400 not-italic uppercase font-bold">{unit}</span></div>
+                            <div className="text-3xl font-black italic">{stats.avgThisWeek?.toFixed(1) || '--'} <span className="text-sm text-slate-400 not-italic uppercase font-bold">{unit}</span></div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                            <div className="flex items-center gap-3 mb-2">
+                                <EmojiIcon name="History" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Previous Weekly Avg</span>
+                            </div>
+                            <div className="text-3xl font-black italic text-slate-500">{stats.avgLastWeek?.toFixed(1) || '--'} <span className="text-sm text-slate-300 not-italic uppercase font-bold">{unit}</span></div>
                         </div>
 
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <div className="flex items-center gap-3 mb-2">
                                 <EmojiIcon name="TrendingUp" />
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Weekly Trend</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weekly Trend</span>
                             </div>
-                            <div className={`text-3xl font-bold ${stats.diff === null ? 'text-slate-300' : stats.diff <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            <div className={`text-3xl font-black italic ${stats.diff === null ? 'text-slate-300' : stats.diff <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                 {stats.diff !== null ? (stats.diff > 0 ? '+' : '') + stats.diff.toFixed(1) : '--'}
                             </div>
                         </div>
@@ -180,51 +206,16 @@
                         <div className={`p-6 rounded-2xl shadow-sm border transition-all ${stats.totalProgress === null ? 'bg-white border-slate-100' : stats.totalProgress <= 0 ? 'bg-blue-50 border-blue-100' : 'bg-orange-50 border-orange-100'}`}>
                             <div className="flex items-center gap-3 mb-2">
                                 <EmojiIcon name="Trophy" />
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Progress</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Progress</span>
                             </div>
-                            <div className={`text-3xl font-bold ${stats.totalProgress === null ? 'text-slate-300' : stats.totalProgress <= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                            <div className={`text-3xl font-black italic ${stats.totalProgress === null ? 'text-slate-300' : stats.totalProgress <= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
                                 {stats.totalProgress !== null ? (stats.totalProgress > 0 ? '+' : '') + stats.totalProgress.toFixed(1) : '--'}
-                            </div>
-                        </div>
-
-                        {/* Nutrition Goals Card - Aesthetically Clean Version */}
-                        <div className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-6 rounded-2xl shadow-xl border border-white/10 relative overflow-hidden">
-                            {/* Decorative element */}
-                            <div className="absolute -right-4 -top-4 w-16 h-16 bg-white/10 rounded-full blur-xl"></div>
-                            
-                            <div className="relative z-10 space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-100/70">Targets</span>
-                                    <EmojiIcon name="Target" size="text-lg" />
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <div className="flex items-center gap-1 opacity-80">
-                                            <EmojiIcon name="Flame" size="text-xs" />
-                                            <span className="text-[10px] font-bold uppercase tracking-tight">Calories</span>
-                                        </div>
-                                        <div className="text-xl font-black italic tracking-tight leading-none">
-                                            {goals.calories || '---'}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1 border-l border-white/20 pl-4">
-                                        <div className="flex items-center gap-1 opacity-80">
-                                            <EmojiIcon name="Beef" size="text-xs" />
-                                            <span className="text-[10px] font-bold uppercase tracking-tight">Protein</span>
-                                        </div>
-                                        <div className="text-xl font-black italic tracking-tight leading-none">
-                                            {goals.protein ? `${goals.protein}g` : '---'}
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="space-y-6">
-                            {/* Input Form */}
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                                     <EmojiIcon name="Scale" /> Log Weight
@@ -242,37 +233,22 @@
                                 </form>
                             </div>
 
-                            {/* Nutrition Goals Input */}
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <EmojiIcon name="Target" /> Set Daily Goals
+                                    <EmojiIcon name="Target" /> Daily Goals
                                 </h3>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Calorie Goal</label>
-                                        <input 
-                                            type="number" 
-                                            placeholder="2000" 
-                                            value={goals.calories} 
-                                            onChange={e => handleGoalChange('calories', e.target.value)} 
-                                            className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-bold" 
-                                        />
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Calories</label>
+                                        <input type="number" placeholder="2000" value={goals.calories} onChange={e => handleGoalChange('calories', e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-sm font-bold" />
                                     </div>
                                     <div>
                                         <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Protein (g)</label>
-                                        <input 
-                                            type="number" 
-                                            placeholder="150" 
-                                            value={goals.protein} 
-                                            onChange={e => handleGoalChange('protein', e.target.value)} 
-                                            className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-400 text-sm font-bold" 
-                                        />
+                                        <input type="number" placeholder="150" value={goals.protein} onChange={e => handleGoalChange('protein', e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-sm font-bold" />
                                     </div>
                                 </div>
-                                <p className="text-[9px] text-slate-400 mt-3 italic text-center">Changes save automatically to your browser.</p>
                             </div>
 
-                            {/* History List */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col max-h-[300px]">
                                 <div className="p-3 border-b bg-slate-50/50 text-xs font-bold text-slate-400 uppercase tracking-widest text-center">History</div>
                                 <div className="overflow-y-auto divide-y divide-slate-50">
@@ -283,9 +259,9 @@
                                             <div key={log.id} className="p-4 flex justify-between items-center group hover:bg-slate-50">
                                                 <span className="text-sm font-bold text-slate-600">{formatDate(log.date)}</span>
                                                 <div className="flex items-center gap-3">
-                                                    <span className="font-black italic text-slate-800">{log.value} <small className="text-[9px] not-italic text-slate-400 uppercase">{unit}</small></span>
-                                                    <button onClick={() => deleteEntry(log.id)} className="text-slate-200 hover:text-rose-500 transition-colors p-1" title="Delete">
-                                                        <EmojiIcon name="Trash2" />
+                                                    <span className="font-black italic text-slate-800">{log.value}</span>
+                                                    <button onClick={() => deleteEntry(log.id)} className="text-slate-200 hover:text-rose-500 p-1">
+                                                        <EmojiIcon name="Trash2" size="text-sm" />
                                                     </button>
                                                 </div>
                                             </div>
@@ -295,29 +271,45 @@
                             </div>
                         </div>
                         
-                        {/* Chart Area */}
-                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] flex flex-col">
-                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Weight Progression</h2>
-                            <div className="flex-grow w-full">
-                                {sortedWeights.length < 2 ? (
-                                    <div className="h-full flex flex-col items-center justify-center text-slate-300 italic border-2 border-dashed border-slate-50 rounded-2xl p-8">
-                                        <EmojiIcon name="TrendingUp" />
-                                        <p className="text-sm mt-2">Log 2+ days to see your trend line</p>
-                                    </div>
-                                ) : (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={sortedWeights} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
-                                            <XAxis dataKey="date" tickFormatter={formatDate} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#cbd5e1'}} />
-                                            <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#cbd5e1'}} />
-                                            <Tooltip 
-                                                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
-                                                labelFormatter={fullFormatDate}
-                                            />
-                                            <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={4} dot={{r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff'}} activeDot={{r: 6}} />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                )}
+                        <div className="lg:col-span-2 space-y-6">
+                            {/* Chart Area */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 min-h-[400px] flex flex-col">
+                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Weight Progression</h2>
+                                <div className="flex-grow w-full">
+                                    {sortedWeights.length < 2 ? (
+                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 italic">
+                                            <p>Log 2+ days to see trend</p>
+                                        </div>
+                                    ) : (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={sortedWeights} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                <XAxis dataKey="date" tickFormatter={formatDate} axisLine={false} tickLine={false} tick={{fontSize: 10}} />
+                                                <YAxis domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{fontSize: 10}} />
+                                                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} labelFormatter={fullFormatDate} />
+                                                <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} dot={{r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff'}} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Monthly Averages Section */}
+                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <EmojiIcon name="BarChart" />
+                                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Monthly Average Breakdown (2025-2026)</h2>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                    {monthlyAverages.map((m, idx) => (
+                                        <div key={idx} className="p-3 border border-slate-50 rounded-xl bg-slate-50/30">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{m.label}</p>
+                                            <p className={`text-xl font-bold italic ${m.avg ? 'text-slate-800' : 'text-slate-200'}`}>
+                                                {m.avg ? `${m.avg} ${unit}` : 'No Data'}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
