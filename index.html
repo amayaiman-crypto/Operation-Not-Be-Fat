@@ -36,7 +36,8 @@
                 Scale: "⚖️",
                 Target: "🎯",
                 Trophy: "🏆",
-                BarChart: "📊"
+                BarChart: "📊",
+                List: "📋"
             };
             return <span className={size} role="img" aria-label={name}>{icons[name] || "•"}</span>;
         };
@@ -71,6 +72,17 @@
             const sortedWeights = useMemo(() => {
                 return [...weights].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
             }, [weights]);
+
+            // Helper to get Sunday-Saturday week range
+            const getWeekRange = (date) => {
+                const d = new Date(date + 'T00:00:00');
+                const day = d.getDay();
+                const sun = new Date(d);
+                sun.setDate(d.getDate() - day);
+                const sat = new Date(sun);
+                sat.setDate(sun.getDate() + 6);
+                return { sun, sat };
+            };
 
             // Calculate Sunday-Saturday stats
             const stats = useMemo(() => {
@@ -109,9 +121,7 @@
             // Calculate Monthly Averages Dec 2025 - Dec 2026
             const monthlyAverages = useMemo(() => {
                 const months = [];
-                // Start: Dec 2025
                 const current = new Date(2025, 11, 1);
-                // End: Dec 2026
                 const end = new Date(2026, 11, 1);
 
                 while (current <= end) {
@@ -132,6 +142,36 @@
                     current.setMonth(current.getMonth() + 1);
                 }
                 return months;
+            }, [sortedWeights]);
+
+            // Group all logs by Week (Sunday-Saturday)
+            const weeklyAverages = useMemo(() => {
+                if (!sortedWeights.length) return [];
+                
+                const weeksMap = {};
+                
+                sortedWeights.forEach(log => {
+                    const { sun, sat } = getWeekRange(log.date);
+                    const weekKey = sun.toISOString().split('T')[0];
+                    if (!weeksMap[weekKey]) {
+                        weeksMap[weekKey] = {
+                            sun,
+                            sat,
+                            total: 0,
+                            count: 0
+                        };
+                    }
+                    weeksMap[weekKey].total += parseFloat(log.value);
+                    weeksMap[weekKey].count += 1;
+                });
+
+                return Object.values(weeksMap)
+                    .sort((a, b) => b.sun.getTime() - a.sun.getTime()) // Newest first
+                    .map(w => ({
+                        range: `${w.sun.toLocaleDateString(undefined, {month:'short', day:'numeric'})} - ${w.sat.toLocaleDateString(undefined, {month:'short', day:'numeric'})}`,
+                        avg: (w.total / w.count).toFixed(1),
+                        count: w.count
+                    }));
             }, [sortedWeights]);
 
             const handleAddWeight = (e) => {
@@ -250,7 +290,7 @@
                             </div>
 
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col max-h-[300px]">
-                                <div className="p-3 border-b bg-slate-50/50 text-xs font-bold text-slate-400 uppercase tracking-widest text-center">History</div>
+                                <div className="p-3 border-b bg-slate-50/50 text-xs font-bold text-slate-400 uppercase tracking-widest text-center">Daily History</div>
                                 <div className="overflow-y-auto divide-y divide-slate-50">
                                     {sortedWeights.length === 0 ? (
                                         <div className="p-8 text-center text-slate-300 text-sm">No logs yet</div>
@@ -298,7 +338,7 @@
                             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                                 <div className="flex items-center gap-3 mb-6">
                                     <EmojiIcon name="BarChart" />
-                                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Monthly Average Breakdown (2025-2026)</h2>
+                                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Monthly Average Breakdown</h2>
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                                     {monthlyAverages.map((m, idx) => (
@@ -312,6 +352,34 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    {/* New Weekly Average Repository */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <div className="flex items-center gap-3 mb-6">
+                            <EmojiIcon name="List" />
+                            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Weekly Average Repository</h2>
+                        </div>
+                        {weeklyAverages.length === 0 ? (
+                            <div className="p-12 text-center text-slate-300 italic border-2 border-dashed border-slate-50 rounded-2xl">
+                                Start logging weights to build your weekly history
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {weeklyAverages.map((week, idx) => (
+                                    <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-100 hover:border-blue-200 transition-colors">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Week Range</span>
+                                            <span className="text-sm font-bold text-slate-700">{week.range}</span>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase block tracking-tighter">Avg ({week.count} logs)</span>
+                                            <span className="text-2xl font-black italic text-blue-600">{week.avg} <small className="text-[10px] not-italic text-blue-300">{unit}</small></span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             );
